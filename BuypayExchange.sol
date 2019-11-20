@@ -3,7 +3,7 @@ pragma solidity ^0.5.10;
 import "./StandardToken.sol";
 import "./Pause.sol";
 import "./Mint.sol";
-import "./Blacklist.sol";
+import "./BlackList.sol";
 import "./Ownable.sol";
 
 /**
