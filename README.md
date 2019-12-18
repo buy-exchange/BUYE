@@ -1,4 +1,4 @@
-BUYPAY Exchange
+Buy Exchange
 ===============
 
 > Coin Description

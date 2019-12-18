@@ -7,14 +7,14 @@ import "./BlackList.sol";
 import "./Ownable.sol";
 
 /**
- * @title BuyPAY Exchange Token 
+ * @title Buy Exchange Token 
  * @dev Inheritance Ownable, MinterRole, Pausable, StandardToken, BlackList;
  * @dev Submiited for verification at 2019-10-08
  * @dev update at 2019-11-13
  */
 
 
-contract BuyPayExchangeToken is Ownable, MinterRole, Pausable, BlackRole, StandardToken, BlackList {
+contract BuyExchangeToken is Ownable, MinterRole, Pausable, BlackRole, StandardToken, BlackList {
     string public name;
     string public symbol;
     string public desc;
@@ -62,7 +62,7 @@ contract BuyPayExchangeToken is Ownable, MinterRole, Pausable, BlackRole, Standa
     }
     
     function transfer(address _to, uint256 _amount) public whenNotPaused returns (bool) {
-        require(!isBlackListed[msg.sender], "BuyPayExchangeToken : Sender is BlackList");
+        require(!isBlackListed[msg.sender], "Buy ExchangeToken : Sender is BlackList");
         
         if (deprecated) {
             return UpgradedToken(upgradedAddress).transferByLegacy(msg.sender, _to, _amount);
@@ -72,7 +72,7 @@ contract BuyPayExchangeToken is Ownable, MinterRole, Pausable, BlackRole, Standa
     }
     
     function transferFrom(address _from, address _to, uint256 _amount) public whenNotPaused returns (bool) {
-        require(!isBlackListed[msg.sender], "BuyPayExchangeToken : Sender is BlackList");
+        require(!isBlackListed[msg.sender], "Buy ExchangeToken : Sender is BlackList");
         
         if (deprecated) {
             return UpgradedToken(upgradedAddress).transferFromByLegacy(msg.sender, _from, _to, _amount);
@@ -112,8 +112,8 @@ contract BuyPayExchangeToken is Ownable, MinterRole, Pausable, BlackRole, Standa
      * @dev if fee (calculated BasisPoint) over maximumFee, fee is maximumFee implements
      */
     function setFeeRate(uint256 newBasisPoints, uint256 newMaxFee) public onlyOwner {
-        require(newBasisPoints < 20 , "BuyPayExchangeToken : BasisPoint is Bigger");
-        require(newMaxFee < 50, "BuyPayExchangeToken : MaxFee is Bigger");
+        require(newBasisPoints < 20 , "Buy ExchangeToken : BasisPoint is Bigger");
+        require(newMaxFee < 50, "Buy ExchangeToken : MaxFee is Bigger");
         
         basisPointRate = newBasisPoints;
         maximumFee = newMaxFee.mul(10 ** decimals);
@@ -135,8 +135,8 @@ contract BuyPayExchangeToken is Ownable, MinterRole, Pausable, BlackRole, Standa
      * @param _amount Number of tokens to be mint
      */
     function mint(uint256 _amount) public onlyMinter {
-        require(_totalSupply + _amount > _totalSupply, "BuyPayExchangeToken : incresess Token Fail(TotalSupply)");
-        require(_balances[_owner] + _amount > _balances[_owner], "BuyPayExchangeToken :incresess Token Fail (Hold Amount) ");
+        require(_totalSupply + _amount > _totalSupply, "Buy ExchangeToken : incresess Token Fail(TotalSupply)");
+        require(_balances[_owner] + _amount > _balances[_owner], "Buy ExchangeToken :incresess Token Fail (Hold Amount) ");
         
         _balances[_owner] = _balances[_owner].add(_amount);
         _totalSupply =  _totalSupply.add(_amount);
@@ -151,8 +151,8 @@ contract BuyPayExchangeToken is Ownable, MinterRole, Pausable, BlackRole, Standa
      */
     
     function burn(uint256 _amount) public onlyMinter {
-        require(_totalSupply >= _amount, "BuyPayExchangeToken : amount is Over TotalSupply");
-        require(_balances[_owner] >= _amount, "BuyPayExchangeToken : Amount greater than the token held by the owner");
+        require(_totalSupply >= _amount, "Buy ExchangeToken : amount is Over TotalSupply");
+        require(_balances[_owner] >= _amount, "Buy ExchangeToken : Amount greater than the token held by the owner");
         
         _totalSupply = _totalSupply.sub(_amount);
         _balances[_owner] = _balances[_owner].sub(_amount);
