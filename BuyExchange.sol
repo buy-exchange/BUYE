@@ -1,168 +1,183 @@
-pragma solidity ^0.5.10;
+pragma solidity ^0.5.15;
 
-import "./StandardToken.sol";
-import "./Pause.sol";
-import "./Mint.sol";
-import "./BlackList.sol";
-import "./Ownable.sol";
+import "./Library/Ownable.sol";
+import "./Library/IERC20.sol";
+import "./Library/SafeMath.sol";
+import "./Library/Freezer.sol";
+import "./Library/ReceiveLimiter.sol";
 
 /**
- * @title Buy Exchange Token 
- * @dev Inheritance Ownable, MinterRole, Pausable, StandardToken, BlackList;
- * @dev Submiited for verification at 2019-10-08
- * @dev update at 2019-11-13
+ * @title BuyExchange
+ * @author Yoonsung
+ * @notice This Contract is an implementation of BuyExchange's ERC20
+ * Basic ERC20 functions and "burn" functions and "mint" are implemented. For the 
+ * burn function, only the Owner of Contract can be called and used 
+ * to incinerate unsold Token. mint function, only the Owner of Contract
+ * can be called and Used to create a new token. LimtReceive limits are
+ * imposed after the contract is distributed and can be revoked through ReceiveUnlock.
+ * Don't do active again after cancellation. The Owner may also suspend the
+ * transfer of a particular account at any time.
  */
+contract BuyExchange is Ownable, IERC20, ReceiveLimiter, Freezer {
+    using SafeMath for uint256;
 
+    string public constant name = "BuyExchange";
+    string public constant symbol = "BUYE";
+    uint8 public constant decimals = 8;
+    uint256 public totalSupply = 10000000e8;
 
-contract BuyExchangeToken is Ownable, MinterRole, Pausable, BlackRole, StandardToken, BlackList {
-    string public name;
-    string public symbol;
-    string public desc;
-    
-    uint256 public decimals;
-    
-    address public upgradedAddress;
-    
-    bool private deprecated;
-    
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
     /**
-     * @dev constructor inital value
-     * @dev All token are deposited to the owner's address
-     * 
-     * @param _initialSupply Initial Supply of the this contract
-     * @param _name Token Name
-     * @param _symbol Token symbol
-     * @param _desc Token Description
-     * @param _decimals Token Decimals
-     */
-    constructor (uint256 _initialSupply, string memory _name, string memory _symbol, string memory _desc, uint256 _decimals) public {
-        _totalSupply = _initialSupply;
-        name = _name;
-        symbol = _symbol;
-        desc = _desc;
-        decimals = _decimals;
-        _balances[_owner] = _initialSupply;
-        deprecated = false;
+    * @notice In constructor, Set Send Limit and Receive Limits.
+    * Additionally, Contract's publisher is authorized to own all tokens.
+    */
+    constructor() public ReceiveLimiter() {
+        balanceOf[msg.sender] = totalSupply;
     }
-    
-    function totalSupply() public view returns (uint256) {
-        if (deprecated) {
-            return StandardToken(upgradedAddress).totalSupply();
-        } else {
-            return super.totalSupply();
-        }
-    }
-    
-    function balanceOf(address _account) public view returns (uint256) {
-        if (deprecated) {
-            return StandardToken(upgradedAddress).balanceOf(_account);
-        } else {
-            return super.balanceOf(_account);
-        }
-    }
-    
-    function transfer(address _to, uint256 _amount) public whenNotPaused returns (bool) {
-        require(!isBlackListed[msg.sender], "Buy ExchangeToken : Sender is BlackList");
-        
-        if (deprecated) {
-            return UpgradedToken(upgradedAddress).transferByLegacy(msg.sender, _to, _amount);
-        } else {
-            return super.transfer(_to, _amount);
-        }
-    }
-    
-    function transferFrom(address _from, address _to, uint256 _amount) public whenNotPaused returns (bool) {
-        require(!isBlackListed[msg.sender], "Buy ExchangeToken : Sender is BlackList");
-        
-        if (deprecated) {
-            return UpgradedToken(upgradedAddress).transferFromByLegacy(msg.sender, _from, _to, _amount);
-        } else {
-            return super.transferFrom(_from, _to, _amount);
-        }
-    }
-    
-    function approve(address _spender, uint256 _amount) public returns (bool) {
-        if (deprecated) {
-            return UpgradedToken(upgradedAddress).approveByLegacy(msg.sender, _spender, _amount);
-        } else {
-            return super.approve(_spender, _amount);
-        }
-    }
-    
-    function allowance(address _tokenOwner, address _tokenSpender) public view returns (uint256) {
-        if (deprecated) {
-            return StandardToken(upgradedAddress).allowance(_tokenOwner, _tokenSpender);
-        } else {
-            return super.allowance(_tokenOwner, _tokenSpender);
-        }
-    }
-    
+
     /**
-     * @dev this contract is deprecate
-     */
-    function deprecate(address _upgradedAddress) public onlyOwner {
-        deprecated = true ;
-        upgradedAddress = _upgradedAddress;
-        emit Deprecate(_upgradedAddress);
+    * @notice Transfer function sends Token to the target. However,
+    * caller must have more tokens than or equal to the quantity for send.
+    * @param _to address The specify what to send target.
+    * @param _value uint256 The amount of token to tranfer.
+    * @return True if the withdrawal succeeded, otherwise revert.
+    */
+    function transfer(address _to, uint256 _value)
+        external
+        isAllowedReceive(_to)
+        isFreezed(msg.sender)
+        returns (bool)
+    {
+        require(_to != address(0), "BuyExchange/Not-Allow-Zero-Address");
+
+        balanceOf[msg.sender] = balanceOf[msg.sender].sub(_value);
+        balanceOf[_to] = balanceOf[_to].add(_value);
+
+        emit Transfer(msg.sender, _to, _value);
+
+        return true;
     }
-    
+
     /**
-     * @dev set Fee, Not Ethereum Gas!
-     * @dev BasisPoint is ratio and new MaxFee is Amount
-     * @dev if fee (calculated BasisPoint) over maximumFee, fee is maximumFee implements
-     */
-    function setFeeRate(uint256 newBasisPoints, uint256 newMaxFee) public onlyOwner {
-        require(newBasisPoints < 20 , "Buy ExchangeToken : BasisPoint is Bigger");
-        require(newMaxFee < 50, "Buy ExchangeToken : MaxFee is Bigger");
-        
-        basisPointRate = newBasisPoints;
-        maximumFee = newMaxFee.mul(10 ** decimals);
-        
-        emit FeeRate(newBasisPoints, newMaxFee);
+    * @notice Transfer function sends Token to the target.
+    * In most cases, the allowed caller uses this function. Send
+    * Token instead of owner. Allowance address must have more
+    * tokens than or equal to the quantity for send.
+    * @param _from address The acoount to sender.
+    * @param _to address The specify what to send target.
+    * @param _value uint256 The amount of token to tranfer.
+    * @return True if the withdrawal succeeded, otherwise revert.
+    */
+    function transferFrom(address _from, address _to, uint256 _value)
+        external
+        isAllowedReceive(_to)
+        isFreezed(_from)
+        returns (bool)
+    {
+        require(_from != address(0), "BuyExchange/Not-Allow-Zero-Address");
+        require(_to != address(0), "BuyExchange/Not-Allow-Zero-Address");
+
+        balanceOf[_from] = balanceOf[_from].sub(_value);
+        balanceOf[_to] = balanceOf[_to].add(_value);
+        allowance[_from][msg.sender] = allowance[_from][msg.sender].sub(_value);
+
+        emit Transfer(_from, _to, _value);
+
+        return true;
     }
-    
+
     /**
-     * @dev get Fee, Not Ethereum Gas!
-     * @dev returns Current Fee Rate and maximumFee
-     */
-     function getFeeRate() public view returns (uint256, uint256) {
-         return ( basisPointRate, maximumFee);
-     }
-    
-    /**
-     * @dev Extension of {ERC20} 
-     * @dev deposited into the owner's address
-     * @param _amount Number of tokens to be mint
-     */
-    function mint(uint256 _amount) public onlyMinter {
-        require(_totalSupply + _amount > _totalSupply, "Buy ExchangeToken : incresess Token Fail(TotalSupply)");
-        require(_balances[_owner] + _amount > _balances[_owner], "Buy ExchangeToken :incresess Token Fail (Hold Amount) ");
-        
-        _balances[_owner] = _balances[_owner].add(_amount);
-        _totalSupply =  _totalSupply.add(_amount);
-        
-        emit Mint(_amount);
+    * @notice The Owner of the Contracts Mint own
+    * Token. can create additional tokens, with a limit of 1 trillion.
+    * @param _value uint256 The amount of mint token.
+    * @return True if the withdrawal succeeded, otherwise revert.
+    */
+    function mint(uint256 _value) external onlyOwner returns (bool) {
+        require(
+            totalSupply.add(_value) <= 1000000000000e8,
+            "BuyExchange/Not-Allow-Mint-Limit"
+        );
+
+        balanceOf[msg.sender] = balanceOf[msg.sender].add(_value);
+        totalSupply = totalSupply.add(_value);
+
+        emit Transfer(address(0), msg.sender, _value);
+
+        return true;
     }
-    
+
     /**
-     * @dev Extension of {ERC20}
-     * @dev withdrawn from owner's address
-     * @dev _amount Number of tokens to be burn
-     */
-    
-    function burn(uint256 _amount) public onlyMinter {
-        require(_totalSupply >= _amount, "Buy ExchangeToken : amount is Over TotalSupply");
-        require(_balances[_owner] >= _amount, "Buy ExchangeToken : Amount greater than the token held by the owner");
-        
-        _totalSupply = _totalSupply.sub(_amount);
-        _balances[_owner] = _balances[_owner].sub(_amount);
-        
-        emit Burn(_amount);
+    * @notice The Owner of the Contracts incinerate own
+    * Token. burn unsold Token and reduce totalsupply. Caller
+    * must have more tokens than or equal to the quantity for send.
+    * @param _value uint256 The amount of incinerate token.
+    * @return True if the withdrawal succeeded, otherwise revert.
+    */
+    function burn(uint256 _value) external returns (bool) {
+        require(
+            _value <= balanceOf[msg.sender],
+            "BuyExchange/Not-Allow-Unvalued-Burn"
+        );
+
+        balanceOf[msg.sender] = balanceOf[msg.sender].sub(_value);
+        totalSupply = totalSupply.sub(_value);
+
+        emit Transfer(msg.sender, address(0), _value);
+
+        return true;
     }
-    
-    event Mint(uint256 amount);
-    event Burn(uint256 amount);
-    
-    event Deprecate(address newAddress);
-    event FeeRate(uint256 feeBasisPoints, uint256 maxFee);
+
+    /**
+    * @notice Specifies the address to instead token transfer.
+    * @param _spender address address to allow transfer.
+    * @param _value uint256 The amount of transferable token.
+    * @return True if the allowance succeeded, otherwise revert.
+    */
+    function approve(address _spender, uint256 _value) external returns (bool) {
+        require(_spender != address(0), "BuyExchange/Not-Allow-Zero-Address");
+        allowance[msg.sender][_spender] = _value;
+        emit Approval(msg.sender, _spender, _value);
+
+        return true;
+    }
+
+    /**
+    * @notice Specifies the address to instead token transfer
+    * @param _spender address address to allow transfer.
+    * @param _value uint256 The amount of increase transferable token.
+    * @return True if the allowance succeeded, otherwise revert.
+    */
+    function increaseAllowance(address _spender, uint256 _value)
+        external
+        returns (bool)
+    {
+        require(_spender != address(0), "BuyExchange/Not-Allow-Zero-Address");
+        allowance[msg.sender][_spender] = allowance[msg.sender][_spender].add(
+            _value
+        );
+        emit Approval(msg.sender, _spender, allowance[msg.sender][_spender]);
+
+        return true;
+    }
+
+    /**
+    * @notice Specifies the address to instead token transfer
+    * @param _spender address address to allow transfer.
+    * @param _value uint256 The amount of decrease transferable token.
+    * @return True if the allowance succeeded, otherwise revert.
+    */
+    function decreaseAllowance(address _spender, uint256 _value)
+        external
+        returns (bool)
+    {
+        require(_spender != address(0), "BuyExchange/Not-Allow-Zero-Address");
+        allowance[msg.sender][_spender] = allowance[msg.sender][_spender].sub(
+            _value
+        );
+        emit Approval(msg.sender, _spender, allowance[msg.sender][_spender]);
+
+        return true;
+    }
 }
